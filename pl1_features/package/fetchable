@@ -1,0 +1,46 @@
+ /* sam01b0, package experimente */
+ sam01b0: package exports (
+                            sam01b0
+                           ,sam01b1
+                           ,sam01ba
+                           ,sam01bb
+                          );
+                      /* konvention: sam01b* */
+
+ DEFINE ALIAS BOOL BIT(1);
+ DCL TRUE TYPE BOOL VALUE('1'B);                    /* BOOLEAN */
+ DCL FALSE TYPE BOOL VALUE('0'B);
+
+ sam01b0: proc(this) returns(ptr) options(fetchable);
+   dcl this ptr;
+   call trace (PROCEDURENAME() !! "-0");
+   return(this);
+ end sam01b0;
+
+ sam01b1: proc(this) returns(ptr) options(fetchable);
+   dcl this ptr;
+   call trace (PROCEDURENAME() !! "-1");
+   return(this);
+ end sam01b1;
+
+ sam01ba: proc(result) returns(type bool) options(fetchable);
+   dcl result char(5);
+   call trace (PROCEDURENAME() !! "-1");
+   result='12345';
+   return(true);
+ end sam01ba;
+
+ sam01bb: proc(result) returns(type bool) options(fetchable);
+   dcl result dec fixed(5);
+   call trace (PROCEDURENAME() !! "-1");
+   result=54321;
+   return(true);
+ end sam01bb;
+
+
+ trace: proc(x);
+   dcl x char(*);
+   /* do some tracing */
+ end trace;
+
+ end sam01b0; 
