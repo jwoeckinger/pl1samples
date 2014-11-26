@@ -1,0 +1,40 @@
+...
+  /* ===include  */
+       /* the entries */
+   dcl sam01b0 entry(ptr) returns(ptr);
+   dcl sam01b1 entry(ptr) returns(ptr);
+   dcl sam01bb external entry(dec fixed(5)) returns(type bool);
+   dcl sam01ba external entry(char(5)) returns(type bool);
+       /* the generic entries */
+   dcl pkg_funk generic(
+       sam01ba when(char),
+       sam01bb when(dec fixed(5))
+                       );
+       /* function pointer */
+   dcl 1 pkg_2,
+         2 fu1 entry(char(*)) returns(bit(1)) ,
+         2 fu2 entry(dec fixed(5)) returns(bit(1)) ,
+         2 * bit(0);
+   pkg_2.fu1 = sam01ba;
+   pkg_2.fu2 = sam01bb;
+
+   /* :::include */
+
+   dcl c5 char(5) suppress(uninit);
+   dcl df5 dec fixed(5) suppress(uninit);
+
+   dcl x ptr;
+   x = sysnull;
+
+       /* call direkt */
+   x = sam01b0(x);
+   x = sam01b1(x);
+
+       /* call via generic */
+   if pkg_funk(df5) then;
+   if pkg_funk(c5) then;
+
+       /* call via func pointer */
+   if pkg_2.fu2(df5) then;
+   if pkg_2.fu1(c5) then;
+...
