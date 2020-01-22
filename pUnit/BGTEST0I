@@ -1,0 +1,394 @@
+ /* bgtest0, unit-test helper */
+ /**
+  * @description: unit test helper functions
+  * @param(api,INOUT): a handle of type ut_api_t
+  */
+ bgtest0: proc(api)
+          options(fetchable);
+ 
+ /**
+  * @description: assert results 
+  * @type(OUT,LIST)
+  * @copybook(in_source)
+  */
+ DCL UTOUT FILE RECORD OUTPUT ENV(FB RECSIZE(1024));
+ dcl utout_io char(1024);
+ 
+ 
+ /* --- BG */
+ %$bgtest_impl = 'YES'; /* i'm the implementer! */
+ %XINCLUDE BGTEST02; /* Unittests */
+ 
+ dcl api handle ut_api_t;
+ 
+ 
+ __funktionen:;
+ /* --- ZEK */
+ %XINCLUDE FLGGCB0#;               /* some core functionality         */
+ %XINCLUDE FLCERR1#;               /* core errorhandling              */
+ CERR_PTR = INIT_CERR_PRODUKT('BGBU');
+ %XINCLUDE FLTRACE#;
+ %XINCLUDE FLBOOL01; /* boolean, true, false */
+ %XINCLUDE FLPARM0#; /* Parse_Value()     */
+ %xinclude bgcsvd01;
+ 
+ 
+ __private:;
+ define struct
+ 1 ut_priv_t, /* private daten*/
+   2 aktuelles_ts type ind_t init(0),
+   2 name_tab(100) char(100) init((*)'');
+ /* TODO: ut_data should reside here */
+ 
+ 
+ __de_pointering:;
+ /* try to make it readable */
+ dcl o handle ut_t;
+ if api=>header.version = ut_api_version.v001
+ then
+   o = bind(:ut_t, api=>header.o:); 
+ else
+   o = api=>data.o; // backward compatibility
+ 
+ dcl privat handle ut_priv_t;
+ if ^(api=>header.func = ut_api_func.init & api=>header.version <> ut_api_version.v001)
+  & ^(api=>header.func = ut_api_func.new)
+ then
+   privat = bind(:ut_priv_t, o=>privat:);
+ 
+ 
+ __weiche:;
+ if api=>header.version = ut_api_version.v001
+ then do;
+   select(api=>header.func);
+     when(ut_api_func.sind_auszufuehren)
+                              api=>parms.sind_auszufuehren.sind_auszufuehren
+                              = ut_sind_auszufuehren();
+     when(ut_api_func.new)    api=>header.o
+                              = ptrvalue(ut_new());
+     when(ut_api_func.delete) call ut_delete(api=>o);
+     when(ut_api_func.init)   call ut_init();
+     when(ut_api_func.reg)    call ut_reg(api=>parms.register.e, api=>parms.register.name);
+     when(ut_api_func.run)    call ut_run(api=>parms.run.e);
+     when(ut_api_func.ts)     call ut_ts('');
+     when(ut_api_func.tc)     call ut_tc(api=>parms.tc.txt);
+     when(ut_api_func.assert) call ut_assert(api=>parms.assert.msg,
+                                             api=>parms.assert.ist,
+                                             api=>parms.assert.soll );
+     when(ut_api_func.end)    call ut_end();
+     when(ut_api_func.out)    call ut_out(api=>parms.out.txt);
+     when(ut_api_func.get_failed)
+                              api=>parms.get_failed.nr_failed
+                              = ut_get_failed();
+ 
+     otherwise $trace(procname() !! ' otherwise ' !! api=>header.func);
+   end;
+ end; else do; /* --- pre-v001 */
+   select(api=>header.func);
+     when(ut_api_func.init)   call ut_init_alt();
+     when(ut_api_func.reg)    call ut_reg(api=>data.e, '');
+     when(ut_api_func.run)    call ut_run(*);
+     when(ut_api_func.ts)     call ut_ts(api=>data.ch(1));
+     when(ut_api_func.tc)     call ut_tc(api=>data.ch(1));
+     when(ut_api_func.assert) call ut_assert_old(api=>data.ch(1)
+                                               , api=>data.ch(2)
+                                               , api=>data.ch(3) );
+     when(ut_api_func.end)    call ut_end_alt();
+     when(ut_api_func.out)    call ut_out(api=>data.ch(1));
+     otherwise  $trace(procname() !! ' otherwise ' !! api=>header.func);
+   end;
+ end;
+ 
+ 
+ __einzelfunks:;
+ 
+ /**
+  * @description: retourniert TRUE/FALSE je nachdem ob UNIT_TESTS im MAINPARM gesetzt sind or not
+  * @return: ja/nein . . . . . . . .
+  */
+ ut_sind_auszufuehren: proc() returns(type boolean);
+ 
+   dcl value type boolean controlled;
+ 
+   if allocation(value) = 0
+   then do;
+     allocate value;
+     /* mainparm checken, wenn ja, dann ut_run(); */
+     /** @MAINPARAM(UNIT_TESTS, CHAR, -): TEST: Ausführen d. UTs)  */
+     IF 0 = PARSE_VALUE( (GGCB_MAINPARM), 'UNIT_TESTS' )
+     THEN
+       value=true;
+     else
+       value=false;
+   end;
+   return(value);
+ end ut_sind_auszufuehren;
+ 
+ 
+ /**
+  * @description: retourniert anzahl der gefailten assertions
+  * @return: anzahl gefailte assertions
+  */
+ ut_get_failed: proc() returns(type ind_t);
+   $trace(procname() !!o=>ts.ass-o=>ts.pass);
+   return(o=>ts.ass-o=>ts.pass);
+ end ut_get_failed;
+ 
+ 
+ /* TODO new/delete sind dzt. nicht in verwendung, erfordert weitere umbauten */
+ /** @presentation(none) */
+ ut_new: proc() suppress(unref) returns(handle ut_t);
+   $trace(procname() );
+ 
+   dcl ut handle ut_t;
+ 
+   ut = new(:ut_t:);
+   type(ut) = value(:ut_t:);
+ 
+   ut=>header = new(:o_header_t:);
+ 
+   ut=>methods = new(:ut_methods_t:);
+ 
+   privat = new(:ut_priv_t:); /* speicher allocieren */
+   ut=>privat = ptrvalue(privat); /* priv setzen */
+   type(privat) = value(:ut_priv_t:); /* init */
+ 
+   return(ut);
+ 
+ end ut_new;
+ 
+ 
+ /** @presentation(none) */
+ ut_delete: proc(ut) suppress(unref);
+   dcl ut handle ut_t;
+   $trace(procname() );
+ 
+   call plidelete(ut=>header);
+   call plidelete(privat);
+   call plidelete(ut=>methods);
+   call plidelete(ut);
+ 
+ end ut_delete;
+ 
+ 
+ /** @presentation(none) */
+ ut_init: proc() suppress(unref);
+   $trace(procname() );
+ 
+   type(privat) = value(:ut_priv_t:); /* init */
+ 
+   o=>data.all = '';
+   o=>data.ts = '';
+ 
+ end ut_init;
+ 
+ 
+ /* ALT: es gab kein NEW/DELETE, nur INIT/END, dort wurde auch allociert
+   alles was im "init" aufgebaut wird, muss im "end" weggeräumt werden */
+ /** @presentation(none) */
+ ut_init_alt: proc() suppress(unref);
+   $trace(procname() );
+ 
+   privat = new(:ut_priv_t:); /* speicher allocieren */
+   o=>privat = ptrvalue(privat); /* priv setzen */
+   call ut_init();
+ 
+ end ut_init_alt;
+ 
+ 
+ /** @presentation(none) */
+ ut_end_alt: proc() suppress(unref);
+    $trace(procname() );
+    call ut_end();
+    call plidelete(privat);
+ end ut_end_alt;
+ 
+ 
+ /** @presentation(none) */
+ ut_end: proc() suppress(unref);
+    $trace(procname() );
+ 
+   if o=>data.ts.name <> ''
+   then do; /* letzten TS reporten */
+     call ut_out_write(
+          'TS: '     !! substr(o=>ts.name,1,100)
+       !!' TC: '     !! o=>ts.tc
+       !!' ASS: '    !! o=>ts.ass
+       !!' PASS: '   !! o=>ts.pass
+       !!' FAILED: ' !! o=>ts.ass-o=>ts.pass
+       );
+   end;
+ 
+   call ut_out_write(                /* overal reporting */
+      'OVERAL:'   !! (97)' '
+    !!' TC: '     !! edit(o=>all.tc             , 'zz9')
+    !!' ASS: '    !! edit(o=>all.ass            , 'zz9')
+    !!' PASS: '   !! edit(o=>all.pass           , 'zz9')
+    !!' FAILED: ' !! edit(o=>all.ass-o=>all.pass, 'zz9')
+    !!' TS: '     !! edit(o=>all.ts             , 'zz9')
+   );
+ 
+ end ut_end;
+ 
+ 
+ /** @presentation(none) */
+ ut_reg: proc(e, name) suppress(unref);
+   dcl e entry();
+   dcl name char(100);
+   $trace(procname() );
+ 
+   o=>all.ts += 1;
+   o=>data.ts_tab(o=>all.ts) = e;
+   privat=>name_tab(o=>all.ts) = name;
+ end ut_reg;
+ 
+ 
+ /** @presentation(none) */
+ ut_tc: PROC(TXT) suppress(unref);
+   dcl txt char(*) nonassignable;
+   $trace(procname() !! txt);
+ 
+   call ut_out_write('    TC: ' !! txt);
+   o=>ts.tc += 1;
+ end ut_tc;
+ 
+ 
+ /* ut_ts ist DEPRECATED, die funktionalität kommt neu nach RUN */
+ /** @presentation(none) */
+ ut_ts: PROC(TXT) suppress(unref);
+   DCL TXT CHAR(100) NONASSIGNABLE;
+   $trace(procname() !! txt);
+ 
+   /* wenn wir das ts "neu" registriert haben, hier nix machen,
+      weil dann wird das alles im ut_run gemacht */
+   if api=>header.version >= 'V001'
+    & privat=>aktuelles_ts <> 0
+    & privat=>name_tab(privat=>aktuelles_ts) <> ''
+   then do;
+     $trace(procname() !! ' but returning ' !! api=>header.version !! privat=>aktuelles_ts );
+     return;
+   end;
+ 
+   /* alles pre-v001 */
+     /* bisherige testsuite reporten */
+   if o=>data.ts.name <> ''
+   then do;
+     call ut_out_write(
+          'TS: '     !! substr(o=>ts.name,1,100)
+       !!' TC: '     !! edit(o=>ts.tc            ,'zz9')
+       !!' ASS: '    !! edit(o=>ts.ass           ,'zz9')
+       !!' PASS: '   !! edit(o=>ts.pass          ,'zz9')
+       !!' FAILED: ' !! edit(o=>ts.ass-o=>ts.pass,'zz9')
+       );
+   end;
+     /* aufsummieren */
+   o=>all.tc   += o=>ts.tc;
+   o=>all.ass  += o=>ts.ass;
+   o=>all.pass += o=>ts.pass;
+     /* neue TS init */
+   o=>data.ts = '';
+   o=>data.ts.name = txt;
+   CALL ut_out_write('TS: ' !! trim(txt) !! ' start (deprecated)');
+ 
+ end ut_ts;
+ 
+ 
+ /* ut_run macht das reporting + retourniert den function-ptr des nächsten testset */
+ /** @presentation(none) */
+ ut_run: proc(e) suppress(unref);
+   dcl e entry() optional;
+   $trace(procname() );
+ 
+   if o=>data.ts.name <> ''
+   then do; /* letztes TS reporten */
+     call ut_out_write(
+          'TS: '     !! substr(o=>ts.name,1,100)
+       !!' TC: '     !! edit(o=>ts.tc            , 'zz9')
+       !!' ASS: '    !! edit(o=>ts.ass           , 'zz9')
+       !!' PASS: '   !! edit(o=>ts.pass          , 'zz9')
+       !!' FAILED: ' !! edit(o=>ts.ass-o=>ts.pass, 'zz9')
+       );
+   end;
+ 
+   /* gesamtsummen aufsummieren */
+   o=>all.tc   += o=>ts.tc;
+   o=>all.ass  += o=>ts.ass;
+   o=>all.pass += o=>ts.pass;
+ 
+   /* neue TS init */
+   o=>data.ts = '';      /* alle ts-zähler zurücksetzen */
+   privat=>aktuelles_ts += 1; /* aktuellen ts-index setzen */
+   if privat=>aktuelles_ts <= o=>all.ts then do;
+ 
+     /* neues TS eröffnen wenn in der name_tab was eingetragen ist */
+     if privat=>name_tab(privat=>aktuelles_ts) <> ''
+     then do;
+       o=>data.ts.name = privat=>name_tab(privat=>aktuelles_ts);
+       CALL ut_out_write('TS: ' !! trim(o=>data.ts.name) !! ' start');
+     end;
+ 
+     /* den ts-entry retournieren */
+     if present(e)
+     then do;
+       e = o=>data.ts_tab(privat=>aktuelles_ts);
+     end;
+   end; else do;
+     $trace(procname() !! ' fertig ' !! o=>all.ts);
+     e = nullentry();
+   end;
+ 
+ end ut_run;
+ 
+ 
+ /** @presentation(none) */
+ ut_out: PROC(TXT) suppress(unref);
+   DCL TXT CHAR(100) NONASSIGNABLE;
+   $trace(procname() !! txt);
+   CALL ut_out_write(txt);
+ 
+ END UT_out;
+ 
+ 
+ /** @presentation(none) */
+ ut_assert: proc(msg, ist, soll) suppress(unref);
+   dcl (msg, ist, soll) char(100);
+   dcl hochkomma char(1) value('"');
+ 
+   o=>ts.ass += 1;
+ 
+   if ist = soll
+   then do;
+     o=>ts.pass += 1;
+   end; else do;
+     call ut_out_write((8)' '
+       !! 'UT_ASSERT:' !! hochkomma !! trim(msg) !! hochkomma
+       !! ',IST:'      !! hochkomma !! trim(ist) !! hochkomma
+       !! ',SOLL:'     !! hochkomma !! trim(soll)!! hochkomma  );
+   end;
+ 
+ end ut_assert;
+ 
+ 
+ /** @presentation(none) */
+ ut_assert_old: proc(msg, ist, soll) suppress(unref);
+   dcl (msg, ist, soll) char(100);
+   call ut_out_write(
+        'UT_ASSERT:' !! trim(msg)
+     !! ',IST:'      !! trim(ist)
+     !! ',SOLL:'     !! trim(soll)  );
+ 
+ end ut_assert_old;
+ 
+ 
+ /**
+  * @description: Schreibt den übergebenen Text auf UTOUT
+  * @param(txt,IN): zu schreibender Text
+  */
+ ut_out_write: proc(txt);
+   dcl (txt) char(*) nonasgn;
+   utout_io = txt;
+   write file(utout) from (utout_io);
+ end ut_out_write;
+ 
+ 
+ end bgtest0;

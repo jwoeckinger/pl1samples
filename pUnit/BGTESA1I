@@ -1,0 +1,192 @@
+ /**
+  * @description: bgtesa1, unittests für unittest-framework :-)
+  * @restart: -
+  * @rerun: -
+  */
+ bgtesa1: proc options(main);
+ 
+ on error call plidump('HB');
+ 
+  __funktionen:;
+ %XINCLUDE FLGGCB0#;               /* GRZ Control Block               */
+ %XINCLUDE FLCERR1#;               /* Zentrale Fehlerfunktion         */
+ CERR_PTR = INIT_CERR_PRODUKT('BGBU');
+ %XINCLUDE FLTRACE#;
+ %XINCLUDE FLBOOL01; /* boolean, true, false */
+ %XINCLUDE FLPARM0#; /* Parse_Value()     */
+ %xinclude bgcsvd01;
+ %xinclude bgutii0#;
+ %xinclude bgadti0#;
+ 
+ 
+ __work:;
+ 
+ call tests_alt();
+ call tests_v001();
+ 
+ 
+ /**
+  * @description: tests mit altem include, sollen helfen rückwärtskompatibilität
+  *  zu erhalten
+  */
+ tests_alt: proc();
+ $trace(procname() !! ' start');
+ 
+ %XINCLUDE BGTEST01; /* Unittests */
+ 
+ dcl bit type boolean;
+ bit = ut_sind_auszufuehren();
+ 
+ call ut_init();
+ 
+ call ut_register(ts_a);
+ call ut_register(ts_b);
+ call ut_register(ts_a);
+ call ut_register(ts_b);
+ call ut_register(ts_a);
+ call ut_register(ts_a);
+ call ut_register(ts_a);
+ 
+ call ut_run();
+ 
+ call ut_end();
+ 
+ /* das ut_end() macht ein 'free', also müsste ein neues 'init' funktionieren */
+ call ut_init();
+ call ut_register(ts_a);
+ call ut_run();
+ call ut_end();
+ 
+ /** @presentation(none) */
+ ts_a: proc();
+ 
+   call ut_ts(procname());
+ 
+   call ut_tc(procname() !! 1);
+   call ut_assert('A', 'B', 'asdfasd');
+   call ut_assert('D', 'D', 'xcvxcv');
+ 
+   call ut_tc(procname() !! 2);
+   call ut_assert('E', 'F', 'qweqwe');
+   call ut_assert('G', 'H', 'zuitzu');
+   call ut_assert(11123.12, 11223.12, 'zuitzu');
+ 
+ end ts_a;
+ 
+ 
+ /** @presentation(none) */
+ ts_b: proc();
+ 
+   call ut_ts(procname());
+ 
+   call ut_tc(procname() !! 1);
+   call ut_assert('X', 'Y', 'asdfasd');
+ 
+ end ts_b;
+ 
+ end tests_alt;
+ 
+ 
+ 
+ /**
+  * @description: tests mit aktueller version
+  */
+ tests_v001: proc();
+  $trace(procname() !! ' start');
+ 
+ %XINCLUDE BGTEST02; /* Unittests */
+ 
+ dcl bit type boolean;
+ bit = ut_sind_auszufuehren();
+ 
+ $ut_check_run_and_exit(unittests);
+ 
+ $trace('das darf im trace nie auftauchen');
+ 
+ 
+ /** @presentation(none) */
+ unittests: proc();
+ 
+ call ut_init();
+ 
+ call ut_out('------------------------ v001 ----------------');
+ $ut_register(ts_a);
+ $ut_register(ts_b);
+ $ut_register(ts_a);
+ $ut_register(ts_b);
+ $ut_register(ts_a);
+ $ut_register(ts_a);
+ $ut_register(ts_a);
+ 
+ /* POC function ptr tbl. Erfordert 1 instanz d. ADT */
+ call ut_=>methods=>run(); /* ut_=>run() wäre schon besser */
+ call ut_=>methods=>out('-- finaly done');
+ 
+ call ut_=>methods=>end();
+ 
+ /* just fun, keine echte verwendung weil ut als singleton angelegt ist *
+ dcl my_ut handle ut_t;
+ my_ut = ut_new();
+ call ut_delete(my_ut);
+ */
+ 
+ 
+ call ut_out('------------------------ re-init ----------------');
+ 
+ /* das ut_end() macht ein 'free', also müsste ein neues 'init' funktionieren */
+ $ut_init();
+ 
+ $ut_register(ts_a);
+ $ut_register(ts_b);
+ $ut_register(ts_cerr);
+ 
+ $ut_run();
+ $ut_end();
+ 
+ 
+ /** @presentation(none) */
+ ts_a: proc();
+   $ut_tc( 'asdf' );
+     $trace('aha'!!c3);
+     dcl c3 char(3) init('abc');
+     $ut_assert(c3, 'B');
+     $ut_assert(c3, 'D');
+ 
+   $ut_tc(procname() !! 2);
+     $ut_assert(c3, 'F');
+     $ut_assert(c3, 'H');
+     $ut_assert(11123.12, 11223.12);
+     $ut_assert(100.00, 100);
+     dcl df52 dec fixed(5,2) init(0);
+     $ut_assert(df52, 0);
+     dcl bf31 type rc_t init(0);
+     $ut_assert(bf31, 0);
+ 
+ end ts_a;
+ 
+ 
+ /** @presentation(none) */
+ ts_b: proc();
+   $ut_tc(procname() !! 1);
+   dcl c3 char(3);
+   $ut_assert(c3, 'Y');
+ end ts_b;
+ 
+ /**
+  * @description: Testfälle für as prüfen der UT_ASSERT_CERR
+  */
+ ts_cerr: proc();
+ 
+   $ut_tc(procname() !! ' check der progpos');
+     /** @presentation(none) */
+     cerr_ptr = sys_error('BGTESA001', 'foo' ,setcerr);
+     $ut_assert_cerr('BGTESA001', 'asdfasd');
+ 
+ end ts_cerr;
+ 
+ end unittests;
+ 
+ end tests_v001;
+ 
+ 
+ end bgtesa1;

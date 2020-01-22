@@ -1,0 +1,529 @@
+ /* Alles was man für Testtreiber & UnitTests braucht.
+
+   Verwendung im globalen Kontext:
+    call ut_init();
+      typischerweise 1 mal, initialisiert
+    call ut_register(testsuite);
+      typischerweise mehrfach, "testsuite" ist eine proc()
+    call ut_run();
+      typischerweise 1 mal, führt alle registrierten testuites aus
+    call ut_end();
+      typischerweise 1 mal, macht gesamt-reporting
+
+   Verwendung in Testsuites:
+    call ut_ts(text);
+      1x je Testsuite, macht Testsuite-Reporting
+    call ut_tc(text);
+      1x je Testcase, erlaubt Strukturierung
+
+    Beispiel:
+    TODO
+        ...
+    %xinclude bgut;
+    ...
+ */
+
+ __includes:;
+ /* ZEK */
+ %XINCLUDE FLCERR1#; /* ZEK Errorhandling */
+ %XINCLUDE FLTRACE#; /* ZEK TRACE */
+ %XINCLUDE FLBOOL01; /* boolean, true, false */
+ %XINCLUDE FLGGCB0#; /* ggcb_*, GRZ Global Control Block */
+ %XINCLUDE FLPARM0#; /* Parse_Value()     */
+ /* BBS */
+ %XINCLUDE BGCSVD01; /* CSV PARSING */
+ %XINCLUDE BGUTII0#; /* BBS Utils, Datatypes, Consts, .. */
+ %XINCLUDE BGADTI0#; /* Abstract Datatypes */
+
+
+
+ /* TODO die folgenden structs sind "funktions-privat", d.h. nur fetchable und
+    derzeit zwangsläufig die Wrapper müssen sie kennen.
+    Die spezifischen structs werden in die "privat" und "public" ptr eingehängt
+    (müssen gecasted  werden, alternativ wären leer-define/handles)
+ */
+
+
+ /* daten die für einen unittest gehalten werden, "das objekt"
+ */
+ define struct 1 ut_t,
+    2 header handle o_header_t, /* anker für o-header */
+     /* "data" sollte eigentlich nicht public sein.
+       Wg Rückwärtskompatibilität darf in "data" baw aber nix geändert werden.
+       Private Daten sind bei "privat" einzuhängen.
+       DEPRECATED
+    */
+    2 data,
+      3 ts_tab(100) entry(), /* TODO: sind 100 ts/ut ok? */
+      3 ts, /* je testsuite */
+        9 name char(100) init(''), /* aktuelle ts (für logging am ende ts) */
+        9 tc   bin fixed(31) init(0), /* zähler testcases */
+        9 ass  bin fixed(31) init(0), /* zähler assertions */
+        9 pass bin fixed(31) init(0), /* zähler passed assertions */
+      3 all, /* gesamt */
+        9 ts   bin fixed(31) init(0), /* zähler testsuites */
+        9 tc   bin fixed(31) init(0), /* zähler tescases */
+        9 ass  bin fixed(31) init(0), /* zähler assertions */
+        9 pass bin fixed(31) init(0), /* zähler passed assertions */
+    2 privat ptr, /* private data (& methods?), only known to implementer */
+    2 methods handle ut_methods_t; /* ? public methods & data*/
+
+
+ /* folgendes mus synchron gewartet werden
+    - die ut_methods_t - function-ptr-struct
+    - die ut_api_t.parms - union mit den api-parms
+    - die ut_api_func - consts mit den func-kennungen
+    - die wrapper
+    - die "weiche"
+ */
+
+ /* adt-methoden, dzt. mehr proof-of-concept.
+    muss das ein eigener typ sein? macht das aufrufen unschön.
+    so können leichter neue methoden hinzugefügt werden (wg. adt.size).
+    wenn jegliches alloc im fetchable ist, sollte das arg allerdings wegfallen.
+ */
+ define struct
+   1 ut_methods_t,
+     2 new    entry(),
+     2 delete entry(),
+     2 init   entry(),
+     2 sind_auszufuehren entry() returns(type boolean),
+     2 register entry(*,*),
+     2 assert  entry(),
+     2 tc      entry(),
+     2 run     entry(),
+     2 end     entry(),
+     2 out     entry(char(*) nonassignable);
+
+ define struct 1 ut_api_t,
+   2 header type api_header_t, /* ! type wg. compatibility, sonst handle mgl.*/
+   2 data,                            /* DEPRECATED, alte parms */
+     3 o handle ut_t, /* ADT */
+     3 e entry(), /* function ptr f. ut_ts */
+     3 ch(5) char(100), /* generische i/o parms - suboptimal */
+     3 bf(5) bin fixed(31),
+   2 parms union, /* in- und out-parms, NUR AB VERSION V001 */
+     3 api_string char(1000),         /* TODO?? schafft Reserve? */
+     3 sind_auszufuehren,
+       4 sind_auszufuehren type boolean,
+     3 init,
+       4 foo char(1),
+     3 register,
+       4 e entry(),
+       4 name char(100),
+     3 run,
+       4 e entry(),
+     3 ts,
+       4 txt char(100),
+     3 tc,
+       4 txt char(100),
+     3 out,
+       4 txt char(100),
+     3 assert,
+       4 msg char(100),
+       4 ist char(100),
+       4 soll char(100),
+     3 end,
+       4 * bit(0),
+     3 get_failed,
+       4 nr_failed bin fixed(31);
+
+ dcl 1 ut_api_func, /* Umreihung=> RECOMPILE ALLER VERWENDER - don't do it */
+       2 init   bin fixed(31) value(1),
+       2 reg    bin fixed(31) value(2),
+       2 run    bin fixed(31) value(3),
+       2 ts     bin fixed(31) value(4),
+       2 tc     bin fixed(31) value(5),
+       2 assert bin fixed(31) value(6),
+       2 end    bin fixed(31) value(7),
+       2 out    bin fixed(31) value(8),
+       2 sind_auszufuehren bin fixed(31) value(9),
+       2 new    bin fixed(31) value(10),
+       2 delete bin fixed(31) value(11),
+       2 get_failed bin fixed(31) value(12);
+
+ dcl 1 ut_api_version,
+       2 v000 char(4) value('xxxx'), /* keine versionierung < v001 */
+       2 v001 char(4) value('V001'), /* aktuelle version */
+       2 v002 char(4) value('V002');
+
+
+ __code_nur_fuer_caller:;
+ %dcl $bgtest_impl char;
+ %if  $bgtest_impl <> 'YES' %then %do;
+
+
+ /* ut ist ein singleton je executable, daher ist das dcl global, <V001*/
+ /* dcl ut_ type ut_t controlled;
+ call ut_init();
+ */
+
+ /* ut_ wird immer als singleton (1 instanz je exe) angelegt */
+ dcl ut_ handle ut_t controlled;
+ if allocation(ut_) = 0 then do;
+   allocate ut_;
+   ut_ = ut_new();
+ end;
+
+
+ /* der external entry, single point of fetchable */
+ dcl bgtest0 entry(*) options(fetchable);
+
+
+ /* funks ========================================================= */
+ /* TODO new/delete/init funkt nicht, braucht noch weitere refactorings */
+ /** @presentation(none) */
+ ut_new: proc() returns(handle ut_t) suppress(unref);
+   dcl api type ut_api_t suppress(uninit);
+   $trace(procname());
+
+   /* wer verwenden kein ut_api_init(..) weil wir noch kein ut_ haben */
+   api.header.version = ut_api_version.v001; /* aktuell(ste) version */
+   api.header.func = ut_api_func.new;        /* welche func rufen wir */
+   call bgtest0(handle(api));   /* call it! */
+
+   return( bind(:ut_t, api.header.o:) );
+ end ut_new;
+
+
+ /** @presentation(none) */
+ ut_delete: proc(this) suppress(unref);
+   dcl this handle ut_t;
+   dcl api type ut_api_t suppress(uninit);
+
+   call ut_api_init(api, ut_api_func.delete);
+   call bgtest0(handle(api));   /* call it! */
+   /* ? api_init und call fetch zusammenlegen? "api" wg spezifischer parms.
+   call ut_call_fetchable(this, api, ut_api_func.delete); */
+ end ut_delete;
+
+
+ /**
+  * @description: initialisiert adt
+  * ! <V001 gabs nur INIT, kein NEW/DELETE, da passierte mehr im INIT
+  */
+ ut_init: proc() suppress(unref);
+   dcl api type ut_api_t suppress(uninit);
+   dcl methods handle ut_methods_t;
+
+   /* POC, das kann nur hier passieren weil die wrapper local sind.
+      TODO: "methods" auflösen, dieser Aufruf ist hässlich.
+      TODO: alle methoden setzen */
+   ut_=>methods=>run = ut_run;
+   ut_=>methods=>out = ut_out;
+   ut_=>methods=>end = ut_end;
+   /* ut_=>methods=>register = ut_register_2; */
+   ut_=>methods=>sind_auszufuehren = ut_sind_auszufuehren;
+   /*
+   call ut_api_init(api, ut_api_func.init);
+   call bgtest0(handle(api));   /* call it! */
+
+ end ut_init;
+
+
+ /** @presentation(none) */
+ ut_end: proc() suppress(unref);
+   dcl api type ut_api_t suppress(uninit);
+   call ut_api_init(api, ut_api_func.end);
+   call bgtest0(handle(api));
+ end ut_end;
+
+
+ /** @presentation(none) */
+ ut_get_failed: proc() returns(bin fixed(31)) suppress(unref) ;
+   dcl api type ut_api_t suppress(uninit);
+   call ut_api_init(api, ut_api_func.get_failed);
+   call bgtest0(handle(api));
+   return(api.parms.get_failed.nr_failed);
+ end ut_get_failed;
+
+
+ /** @presentation(none) */
+ ut_sind_auszufuehren: proc() returns(type boolean) suppress(unref);
+     dcl api type ut_api_t suppress(uninit);
+     call ut_api_init(api, ut_api_func.sind_auszufuehren);
+     call bgtest0(handle(api));
+     return(api.parms.sind_auszufuehren.sind_auszufuehren);
+ end ut_sind_auszufuehren;
+
+
+ /** @presentation(none) */
+ ut_check_run_and_exit: proc(func) suppress(unref);
+     dcl func entry();
+
+     if ut_sind_auszufuehren() then do;
+        call func;
+
+        if 0 <> ut_get_failed() then call pliretc(7); /* TODO */
+        exit; /* beende thread(!) */
+
+     end;
+
+ end ut_check_run_and_exit;
+
+
+ /* TODO: ut_assert war ursprünglich nur '(char,char,char)' was
+    zu unschönen CompilerWARNINGS führte.
+    Der dzt. Generic entry ist auch nicht ideal, weil es zu
+    CompileFEHLERN kommt wenn es keinen passenden 'when' gibt.
+    Der Workaround ist die Konvertierung in eine der verfügbaren
+    Parameter-Typen z.b. 'dec(xxx,13,2)'. Alternativ kann man auch direkt
+    den jeweiligen Entry codieren (call ut_assert_df(soll, 123.45, 'foo');
+    Dzt. sind einige gängige paramter-typen definiert, Erweiterung
+    jederzeit möglich. Vorschläge für elegantere Lösung auch.
+
+ */
+ dcl ut_assert generic(
+   ut_assert_char when(char, char, char)
+
+  ,ut_assert_bit  when(bit, bit, char)
+
+  ,ut_assert_df   when(bin fixed, dec fixed, char)
+  ,ut_assert_df   when(dec fixed, dec fixed, char)
+  ,ut_assert_df   when(dec fixed, bin fixed, char)
+
+  ,ut_assert_bf   when(bin fixed, bin fixed, char)
+
+  ,ut_assert_char when(*, *, char)
+
+  /*,ut_assert_pic   when(pic, pic, char) * TODO: howto? */
+
+  );
+
+ /** @presentation(none)  */
+ ut_assert_bit: proc(ist, soll, msg) suppress(unref);
+   dcl (ist, soll) bit(1) nonasgn;
+   dcl msg char(*);
+   dcl (ist_c, soll_c) char(1);
+   if ist then ist_c = '1'; else ist_c = '0';
+   if soll then soll_c = '1'; else soll_c = '0';
+
+   call ut_assert_char(char(ist_c), char(soll_c), msg);
+ end ut_assert_bit;
+
+
+ /** @presentation(none)  */
+ ut_assert_df: proc(ist, soll, msg) suppress(unref);
+   dcl (ist, soll) dec fixed(31,13) nonasgn;
+   dcl msg char(*);
+   if ist = trunc(ist)
+    & soll = trunc(soll)
+   then
+     call ut_assert_char(edit(ist,'(17)z9'),
+                         edit(soll,'(17)z9'), msg);
+   else
+     call ut_assert_char(edit(ist, '-(17)z9v,(13)9'),
+                         edit(soll,'-(17)z9v,(13)9'), msg);
+ end ut_assert_df;
+
+
+ /** @presentation(none)  */
+ ut_assert_bf: proc(ist, soll, msg) suppress(unref);
+   dcl (ist, soll) bin fixed(31) nonasgn;
+   dcl msg char(*);
+   call ut_assert_char(edit(ist,'(5)z9'),
+                       edit(soll,'(5)z9'), msg);
+ end ut_assert_bf;
+
+
+ /**
+  * @description: prüft ob die in SOLL übergebene PROGPOS gesetzt ist
+  * @param(soll_progpos,IN)
+  * @param(msg,IN)
+  */
+ ut_assert_cerr: proc(soll_progpos, msg) suppress(unref);
+   dcl (soll_progpos, msg) char(*) nonasgn;
+   call ut_assert_char(cerr.progpos,
+                       soll_progpos, msg);
+ end ut_assert_cerr;
+
+
+ /** @presentation(none)  */
+ ut_assert_char: proc(ist, soll, msg) suppress(unref);
+   dcl (ist, soll, msg) char(*) nonasgn;
+   dcl api type ut_api_t suppress(uninit);
+
+   /* die ut_asserts im trace machen den trace lesbarer, blähen ihn aber auf */
+   $Trace('UT_ASSERT:' !! MSG
+       !! ',IST:'      !! IST
+       !! ',SOLL:'     !! SOLL
+       !! ',')         level(low);
+
+   api.parms.assert.msg  = msg;
+   api.parms.assert.ist  = ist;
+   api.parms.assert.soll = soll;
+   call ut_api_init(api, ut_api_func.assert);
+   call bgtest0(handle(api));
+
+ end ut_assert_char;
+
+
+ /** @presentation(none) */
+ ut_ts: proc(txt) suppress(unref);
+   dcl txt char(*) nonassignable;
+   dcl api type ut_api_t suppress(uninit);
+   call ut_api_init(api, ut_api_func.ts);
+   api.parms.ts.txt = txt;
+   call bgtest0(handle(api));
+ end ut_ts;
+
+
+ /** @presentation(none) */
+ ut_tc: proc(txt) suppress(unref);
+   dcl txt char(*) nonassignable;
+   $trace(procname());
+   dcl api type ut_api_t suppress(uninit);
+   call ut_api_init(api, ut_api_func.tc);
+   api.parms.tc.txt = txt;
+   call bgtest0(handle(api));
+ end ut_tc;
+
+ dcl ut_register generic( ut_register_1 when(entry)
+                        , ut_register_2 when(entry, char)
+                        );
+ /* DEPRECATED, alte api */
+ /** @presentation(none) */
+ ut_register_1: proc(ts) suppress(unref);
+   dcl ts entry();
+   dcl api type ut_api_t suppress(uninit);
+   call ut_api_init(api, ut_api_func.reg);
+   api.header.version=''; /* !!! alte api */
+   api.data.e = ts;       /* !!! alte api */
+   call bgtest0(handle(api));
+ end ut_register_1;
+
+
+ /** @presentation(none) */
+ ut_register_2: proc(ts, name) suppress(unref);
+   dcl ts entry();
+   dcl name char(*);
+   dcl api type ut_api_t suppress(uninit);
+   call ut_api_init(api, ut_api_func.reg);
+   api.parms.register.e = ts;
+   api.parms.register.name = name;
+   call bgtest0(handle(api));
+ end ut_register_2;
+
+
+ /** @presentation(none) */
+ ut_run: proc() suppress(unref);
+   $trace(procname());
+   dcl i bin fixed(31);
+   dcl api type ut_api_t suppress(uninit);
+   call ut_api_init(api, ut_api_func.run);
+
+   do forever;
+     call bgtest0(handle(api)); /* aufruf fetchable, ermitteln d. ts-entry */
+     if api.parms.run.e = nullentry()
+     then
+       leave;
+     call api.parms.run.e; /* testset rufen */
+   end;
+ end ut_run;
+
+
+ /** @presentation(none) */
+ ut_out: proc(txt) suppress(unref);
+   dcl txt char(*) nonassignable;
+   dcl api type ut_api_t suppress(uninit);
+
+   call ut_api_init(api, ut_api_func.out);
+   api.parms.out.txt = txt;
+
+   call bgtest0(handle(api));
+ end ut_out;
+
+
+ /**
+  * @description: initialisiert die api-struct, erledigt die Zuweisungen
+  *   die vor jedem BGTEST0-Aufruf zu erledigen sind weil wird die api-struct
+  *   in den Wrappern local haben.
+  * @param(api,INOUT): die api-struct
+  * @param(func,IN): die funktion
+  */
+ ut_api_init: proc(api, func);
+   dcl api type ut_api_t;
+   dcl func type ind_t;
+
+   api.header.version = ut_api_version.v001; /* aktuell(ste) version */
+   api.header.func = func;                   /* welche func rufen wir */
+   api.header.o = ptrvalue(ut_);     /* ADT  */
+
+ end ut_api_init;
+
+ /* =========================================================================
+    Preproc-Wrapper für die ut_ Funktionen. Manche haben echte Funktionalität
+    (z.b. $ut_register, $ut_assert), andere existieren nur um die $ut_..
+    Aufrufe konsistent zu halten. */
+ %dcl $ut_check_run_and_exit entry;
+ %$ut_check_run_and_exit: proc(txt);
+   dcl txt char noscan;
+   answer ( 'call ut_check_run_and_exit(' );
+   answer ( trim(txt) );
+   answer ( ')' );
+ %END $ut_check_run_and_exit;
+
+ %dcl $ut_init entry;
+ %$ut_init: proc();
+   answer ( 'call ut_init' );
+ %END $ut_init;
+
+ %dcl $ut_run entry;
+ %$ut_run: proc();
+   answer ( 'call ut_run' );
+ %END $ut_run;
+
+ %dcl $ut_end entry;
+ %$ut_end: proc();
+   answer ( 'call ut_end' );
+ %END $ut_end;
+
+ %dcl $ut_tc entry;
+ %$ut_tc: proc(txt);
+   dcl txt char noscan;
+   answer ( 'call ut_tc(' );
+   answer ( trim(txt) );
+   answer ( ')' );
+ %END $ut_tc;
+
+ %dcl $ut_out entry;
+ %$ut_out: proc(txt);
+   dcl txt char noscan;
+   answer ( 'call ut_out(' );
+   answer ( trim(txt) );
+   answer ( ')' );
+ %END $ut_out;
+
+ %dcl $ut_assert_cerr entry;
+ %$ut_assert_cerr: proc(soll_progpos, cerr);
+   dcl soll_progpos char noscan;
+   dcl cerr char noscan;
+   answer ( 'call ut_assert_cerr(' );
+   answer ( trim(soll_progpos) !! ',' );
+   answer ( trim(cerr) );
+   answer ( ')' );
+ %END $ut_assert_cerr;
+
+ %dcl $ut_assert entry;
+  /**
+  * @description: preproc-ut_assert erlaubt "sparsame" schreibweise
+  * "$ut_assert(ist, soll);" statt "call ut_assert(ist, soll, 'ist');"
+  * @param(ist,IN)
+  * @param(soll,IN)
+  */
+ %$ut_assert: proc(ist, soll);
+   dcl ist char noscan;
+   dcl soll char noscan;
+   answer ('call ut_assert(' !! ist !! ',' !! soll !! ', '''!!ist!!''')');
+ %END $ut_assert;
+
+ %dcl $ut_register entry;
+ %$ut_register: proc(a);
+   dcl a char noscan;
+   answer ('call ut_register(' !! a !! ', '''!!a!!''')');
+ %END $ut_register;
+
+
+ %end; /*...nur verwender */
+
+ __end_of_include:;
