@@ -100,11 +100,11 @@
  end;
  
  
- __einzelfunks:;
+ __simple_funcs:;
  
  /**
-  * @description: retourniert TRUE/FALSE je nachdem ob UNIT_TESTS im MAINPARM gesetzt sind or not
-  * @return: ja/nein . . . . . . . .
+  * @description: UnitTests? 
+  * @return: y/n
   */
  ut_sind_auszufuehren: proc() returns(type boolean);
  
@@ -126,8 +126,8 @@
  
  
  /**
-  * @description: retourniert anzahl der gefailten assertions
-  * @return: anzahl gefailte assertions
+  * @description: determines
+  * @return: number of failed assertions
   */
  ut_get_failed: proc() returns(type ind_t);
    $trace(procname() !!o=>ts.ass-o=>ts.pass);
@@ -135,7 +135,6 @@
  end ut_get_failed;
  
  
- /* TODO new/delete sind dzt. nicht in verwendung, erfordert weitere umbauten */
  /** @presentation(none) */
  ut_new: proc() suppress(unref) returns(handle ut_t);
    $trace(procname() );
@@ -183,8 +182,6 @@
  end ut_init;
  
  
- /* ALT: es gab kein NEW/DELETE, nur INIT/END, dort wurde auch allociert
-   alles was im "init" aufgebaut wird, muss im "end" weggeräumt werden */
  /** @presentation(none) */
  ut_init_alt: proc() suppress(unref);
    $trace(procname() );
@@ -209,7 +206,7 @@
     $trace(procname() );
  
    if o=>data.ts.name <> ''
-   then do; /* letzten TS reporten */
+   then do; /* report last ts */
      call ut_out_write(
           'TS: '     !! substr(o=>ts.name,1,100)
        !!' TC: '     !! o=>ts.tc
@@ -253,14 +250,13 @@
  end ut_tc;
  
  
- /* ut_ts ist DEPRECATED, die funktionalität kommt neu nach RUN */
+ /* ut_ts DEPRECATED*/
  /** @presentation(none) */
  ut_ts: PROC(TXT) suppress(unref);
    DCL TXT CHAR(100) NONASSIGNABLE;
    $trace(procname() !! txt);
  
-   /* wenn wir das ts "neu" registriert haben, hier nix machen,
-      weil dann wird das alles im ut_run gemacht */
+   /* actual: everything is done in ut_run */
    if api=>header.version >= 'V001'
     & privat=>aktuelles_ts <> 0
     & privat=>name_tab(privat=>aktuelles_ts) <> ''
@@ -269,8 +265,7 @@
      return;
    end;
  
-   /* alles pre-v001 */
-     /* bisherige testsuite reporten */
+    /* old, deprecated */
    if o=>data.ts.name <> ''
    then do;
      call ut_out_write(
@@ -293,14 +288,14 @@
  end ut_ts;
  
  
- /* ut_run macht das reporting + retourniert den function-ptr des nächsten testset */
+ /* ut_run reporting + iterate to next testset */
  /** @presentation(none) */
  ut_run: proc(e) suppress(unref);
    dcl e entry() optional;
    $trace(procname() );
  
    if o=>data.ts.name <> ''
-   then do; /* letztes TS reporten */
+   then do; 
      call ut_out_write(
           'TS: '     !! substr(o=>ts.name,1,100)
        !!' TC: '     !! edit(o=>ts.tc            , 'zz9')
@@ -310,24 +305,24 @@
        );
    end;
  
-   /* gesamtsummen aufsummieren */
+   /* overal numbers */
    o=>all.tc   += o=>ts.tc;
    o=>all.ass  += o=>ts.ass;
    o=>all.pass += o=>ts.pass;
  
-   /* neue TS init */
-   o=>data.ts = '';      /* alle ts-zähler zurücksetzen */
-   privat=>aktuelles_ts += 1; /* aktuellen ts-index setzen */
+   /* init next TS */
+   o=>data.ts = '';      /* reset numbers */
+   privat=>aktuelles_ts += 1; /* increment TS# */
    if privat=>aktuelles_ts <= o=>all.ts then do;
  
-     /* neues TS eröffnen wenn in der name_tab was eingetragen ist */
+     /* start new TS */
      if privat=>name_tab(privat=>aktuelles_ts) <> ''
      then do;
        o=>data.ts.name = privat=>name_tab(privat=>aktuelles_ts);
        CALL ut_out_write('TS: ' !! trim(o=>data.ts.name) !! ' start');
      end;
  
-     /* den ts-entry retournieren */
+     /* set TS entry */
      if present(e)
      then do;
        e = o=>data.ts_tab(privat=>aktuelles_ts);
@@ -381,7 +376,7 @@
  
  
  /**
-  * @description: Schreibt den übergebenen Text auf UTOUT
+  * @description: writes to UTOUT
   * @param(txt,IN): zu schreibender Text
   */
  ut_out_write: proc(txt);

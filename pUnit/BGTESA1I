@@ -8,7 +8,7 @@
  on error call plidump('HB');
  
   __funktionen:;
- %XINCLUDE FLGGCB0#;               /* GRZ Control Block               */
+ %XINCLUDE FLGGCB0#;               /* Control Block               */
  %XINCLUDE FLCERR1#;               /* Zentrale Fehlerfunktion         */
  CERR_PTR = INIT_CERR_PRODUKT('BGBU');
  %XINCLUDE FLTRACE#;
@@ -26,8 +26,7 @@
  
  
  /**
-  * @description: tests mit altem include, sollen helfen rückwärtskompatibilität
-  *  zu erhalten
+  * @description: with old include, tests backward compatibility
   */
  tests_alt: proc();
  $trace(procname() !! ' start');
@@ -51,7 +50,6 @@
  
  call ut_end();
  
- /* das ut_end() macht ein 'free', also müsste ein neues 'init' funktionieren */
  call ut_init();
  call ut_register(ts_a);
  call ut_run();
@@ -89,7 +87,7 @@
  
  
  /**
-  * @description: tests mit aktueller version
+  * @description: tests with latest version
   */
  tests_v001: proc();
   $trace(procname() !! ' start');
@@ -101,7 +99,7 @@
  
  $ut_check_run_and_exit(unittests);
  
- $trace('das darf im trace nie auftauchen');
+ $trace('should not be executed');
  
  
  /** @presentation(none) */
@@ -118,22 +116,16 @@
  $ut_register(ts_a);
  $ut_register(ts_a);
  
- /* POC function ptr tbl. Erfordert 1 instanz d. ADT */
- call ut_=>methods=>run(); /* ut_=>run() wäre schon besser */
+ /* POC */
+ call ut_=>methods=>run(); 
  call ut_=>methods=>out('-- finaly done');
  
  call ut_=>methods=>end();
  
- /* just fun, keine echte verwendung weil ut als singleton angelegt ist *
- dcl my_ut handle ut_t;
- my_ut = ut_new();
- call ut_delete(my_ut);
- */
  
  
  call ut_out('------------------------ re-init ----------------');
  
- /* das ut_end() macht ein 'free', also müsste ein neues 'init' funktionieren */
  $ut_init();
  
  $ut_register(ts_a);
@@ -173,7 +165,7 @@
  end ts_b;
  
  /**
-  * @description: Testfälle für as prüfen der UT_ASSERT_CERR
+  * @description: testing the cerr-assertion
   */
  ts_cerr: proc();
  
